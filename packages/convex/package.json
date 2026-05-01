@@ -1,0 +1,19 @@
+{
+  "name": "@sui-mev-lab/convex",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Convex backend for the Sui MEV Discovery Lab",
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sui-mev-lab/pattern-matchers": "workspace:*",
+    "convex": "^1.17.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

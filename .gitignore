@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+.next/
+.turbo/
+.env
+.env.local
+.convex/
+_generated/
+*.log
+.DS_Store

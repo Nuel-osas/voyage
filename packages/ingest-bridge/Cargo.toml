@@ -1,0 +1,19 @@
+[package]
+name = "sui-mev-lab-ingest-bridge"
+version = "0.0.1"
+edition = "2021"
+description = "Filtered ingest from Sui mainnet checkpoints into the lab's Convex backend"
+license = "Apache-2.0"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[[bin]]
+name = "ingest-bridge"
+path = "src/main.rs"

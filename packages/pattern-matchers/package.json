@@ -1,0 +1,19 @@
+{
+  "name": "@sui-mev-lab/pattern-matchers",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Pure-function MEV pattern matchers for the Sui MEV Discovery Lab",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

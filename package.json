@@ -1,0 +1,20 @@
+{
+  "name": "sui-mev-lab",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Research-grade scanner for extractable value patterns on Sui mainnet",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "convex:dev": "pnpm --filter @sui-mev-lab/convex dev",
+    "dashboard:dev": "pnpm --filter @sui-mev-lab/dashboard dev",
+    "ingest:dev": "cargo run --manifest-path packages/ingest-bridge/Cargo.toml",
+    "replay:dev": "cargo run --manifest-path packages/replay-engine/Cargo.toml"
+  }
+}
