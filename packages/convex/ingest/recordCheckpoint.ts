@@ -1,20 +1,13 @@
 import { internalMutation } from '../_generated/server';
 import { v } from 'convex/values';
 
-/**
- * Ingest mutation called by the ingest-bridge HTTP endpoint.
- *
- * Idempotency: re-pushing a checkpoint with the same `ingestVersion` is a
- * no-op. The bridge bumps `ingestVersion` only when the filter logic itself
- * changes — not on retries. This guarantees that retries from the bridge
- * never cause duplicate writes.
- *
- * Materialization: every accepted tx_event also writes per-object timeline
- * rows synchronously. Doing this on insert is cheaper than reconstructing
- * the timeline on every matcher run.
- *
- * See ADR 0001 for why ingest is the bridge's responsibility, not Convex's.
- */
+// Bridge calls this through the HTTP endpoint with each checkpoint batch.
+// Idempotency: repushing the same digest at the same ingestVersion is a no-op.
+// If the bridge bumps ingestVersion (filter logic changed), we replace existing
+// rows instead of inserting duplicates.
+//
+// We materialize per-object timeline rows on insert. Cheaper to do once here
+// than in every matcher.
 
 export const recordCheckpoint = internalMutation({
   args: {
@@ -58,7 +51,6 @@ export const recordCheckpoint = internalMutation({
           skipped++;
           continue;
         }
-        // Bridge filter logic was updated. Replace the old row.
         await ctx.db.patch(existing._id, {
           touchedSharedObjects: tx.touchedSharedObjects,
           valueDelta: tx.valueDelta,
@@ -82,7 +74,6 @@ export const recordCheckpoint = internalMutation({
         ingestVersion: args.ingestVersion,
       });
 
-      // Materialize per-object timeline rows.
       for (const obj of tx.touchedSharedObjects) {
         const objDelta = tx.valueDelta.find((d) => d.objectId === obj);
         await ctx.db.insert('object_timeline', {
@@ -93,11 +84,9 @@ export const recordCheckpoint = internalMutation({
           deltaMicroSui: objDelta?.deltaMicroSui ?? 0,
         });
       }
-
       recorded++;
     }
 
-    // Advance the watermark. Used by detection driver to bound the live window.
     const watermark = await ctx.db
       .query('ingest_watermark')
       .withIndex('by_scope', (q) => q.eq('scope', 'global'))

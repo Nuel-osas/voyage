@@ -1,13 +1,6 @@
-/**
- * Public types for pattern matchers.
- *
- * Matchers are pure functions over windows of transaction events. They have no
- * Convex dependencies and no side effects. The Convex action that drives them
- * is responsible for loading windows, persisting candidates, and enqueuing
- * replays.
- *
- * See ADR 0004 for the full rationale.
- */
+// Pattern matchers are pure functions over a window of transaction events.
+// They produce candidate findings; verification happens elsewhere in the
+// replay engine. See ADR 0004.
 
 export interface TxEvent {
   digest: string;
@@ -33,48 +26,38 @@ export interface TxFlags {
   isMultiHop: boolean;
 }
 
-/**
- * Read-only context provided to every matcher invocation.
- * Matchers must not fetch additional state — anything they need must be in here.
- */
+// Read-only context every matcher receives. Anything a matcher needs has to
+// be in here; matchers can't fetch on demand.
 export interface MatcherContext {
-  /** Current Sui mainnet protocol version active for the window. */
   protocolVersion: number;
-  /** Set of object IDs known to be DEX pools, by protocol. */
   dexPoolRegistry: ReadonlyMap<string, DexPoolInfo>;
-  /** Set of object IDs known to be oracle objects, by feed. */
   oracleRegistry: ReadonlyMap<string, OracleInfo>;
-  /** Recent oracle price snapshots, keyed by oracle object ID. */
   oraclePriceHistory: ReadonlyMap<string, OracleSnapshot[]>;
 }
 
 export interface DexPoolInfo {
-  protocol: string; // e.g. 'cetus', 'turbos', 'aftermath'
+  protocol: string;
   baseAsset: string;
   quoteAsset: string;
 }
 
 export interface OracleInfo {
-  feed: string; // e.g. 'pyth/SUI-USD', 'switchboard/USDC-USD'
+  feed: string;
   decimals: number;
 }
 
 export interface OracleSnapshot {
   checkpoint: number;
   timestampMs: number;
-  priceMicro: number; // price in 10^-6 units
+  priceMicro: number;
 }
 
 export interface CandidateFinding {
-  /** Matcher name. Stable identifier — used as a key for dedup and severity weighting. */
   pattern: string;
-  /** The transactions implicated, in chronological order. */
   relatedTxDigests: string[];
-  /** Checkpoint where the suspect activity occurred. */
   checkpoint: number;
-  /** Free-form detail — the matcher decides the schema. */
   detail: Record<string, unknown>;
-  /** Hypothesized extracted value. The replay-engine produces the authoritative number. */
+  // Hypothesis only. Replay produces the authoritative extraction figure.
   estimatedExtractionMicroSui: number;
 }
 

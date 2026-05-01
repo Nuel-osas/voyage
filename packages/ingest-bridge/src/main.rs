@@ -1,8 +1,5 @@
-//! ingest-bridge: filter Sui mainnet checkpoints and push relevant transactions
-//! to the lab's Convex backend.
-//!
-//! See ADR 0001 for why filtering happens here and not in Convex, and ADR 0002
-//! for the filter criteria themselves.
+// Pulls mainnet checkpoints, filters, posts to Convex.
+// See ADR 0001 for why this lives outside Convex.
 
 mod config;
 mod filter;
@@ -18,9 +15,9 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         sui_rpc = %cfg.sui_rpc_url,
-        convex_endpoint = %cfg.convex_ingest_url,
+        convex = %cfg.convex_ingest_url,
         ingest_version = cfg.ingest_version,
-        "starting ingest-bridge"
+        "starting"
     );
 
     sui_subscriber::run(cfg).await

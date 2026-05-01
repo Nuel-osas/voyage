@@ -1,50 +1,33 @@
-# ADR 0001: Convex as Coordination Layer, Not Ingest Path
+# ADR 0001: Convex for coordination, not ingest
 
-**Status:** Accepted
-**Context owner:** Architecture
-**Decision drivers:** throughput, cost, single-engineer maintainability
+## What we're picking
 
-## Context
+Convex as the system of record for transaction graph, embeddings, findings, and review state. A separate Rust worker handles ingest from Sui mainnet and pushes filtered data to Convex over HTTP.
 
-The Sui MEV Discovery Lab needs a system of record for the transaction graph, embeddings, candidate findings, and review state. It also needs reactive update propagation across at least five consumers (dashboard, reviewer notifications, replay completion, disclosure state, scheduled rematching).
+## What we considered
 
-Two stack shapes were considered:
+Postgres for storage, Redis for streaming, pgvector for similarity, a cron worker for schedules, a websocket layer for the dashboard. All real options. All also five services to deploy and glue together.
 
-1. **Traditional:** Postgres + Redis + pgvector + cron worker + WebSocket server, glued together with application code.
-2. **Convex-centered:** one reactive backend that owns all of the above with a shared type system.
+## Why Convex
 
-Sui mainnet produces transactions at peak rates around 7,000 TPS. Pushing all of them through any system of record is wasteful — most are not relevant to MEV detection.
+Five reactive consumers, one type system, no glue code between them. The dashboard, the scheduled rematching, replay completion notifications, reviewer assignments, and disclosure transitions all read from the same place and update without me writing pub/sub.
 
-## Decision
+The Convex deployment also becomes a public artifact for "what reactive backends look like at research scale." That has its own value if we ever talk about the work.
 
-We adopt a Convex-centered design with a Rust ingest worker at the boundary.
+## Why ingest is a separate Rust worker
 
-- Convex is the system of record for the transaction graph, embeddings, findings, and review state.
-- Convex executes scheduled pattern detection over rolling windows.
-- Convex owns the reactive query layer for the dashboard.
-- A Rust `ingest-bridge` worker filters Sui's checkpoint stream and pushes only relevant transactions to Convex over HTTP.
+Sui peaks around 7K TPS. Convex is the wrong place to do high-throughput filtering. Pushing every transaction in would burn function-time on cheap rejections.
 
-## Consequences
+Filtering belongs at the source: walk the checkpoint, drop irrelevant transactions, send a smaller batch over HTTP with a shared-secret header. The bridge keeps Convex's role clean (it stores what's relevant) and lets the bridge evolve independently.
 
-### Positive
+## What this costs us
 
-- Five reactive consumers cost zero additional code.
-- Schema and detection logic share a TypeScript type system; no codegen step.
-- One service to deploy, monitor, and pay for.
-- Convex's own usage as a research-grade backend is itself a public artifact.
+Cross-table analytics is awkward. Convex queries aren't SQL, so "give me every finding whose touched objects appear in another finding" is a denormalization problem. Dealt with by materializing per-object timelines on insert.
 
-### Negative
+Vector index has dimensionality and per-record limits. Compact embeddings (192-dim, transaction-shape only) work inside those limits. Larger experiments happen offline against exports.
 
-- We pay for the architectural boundary at the edge: a separate Rust service and the protocol between it and Convex.
-- Cross-table analytics (e.g. "show me all findings whose touched objects also appear in another finding") require either denormalization or post-processing — Convex queries are not SQL.
-- Vector search has dimensionality and per-record size constraints, which forced a compact transaction-shape embedding rather than a fuller representation.
+## Revisit when
 
-### Mitigations
-
-- Define the HTTP boundary with idempotency keys and explicit schema versioning so the bridge can evolve independently.
-- Materialize per-object timelines on insert so reviewer queries hit indexed projections.
-- Run the larger embedding experiments in an offline notebook against checkpointed Convex exports, not in the hot path.
-
-## Status Notes
-
-Revisited: not yet. Threshold for revisiting: a sustained 30-day Convex bill exceeding the budget envelope, or a query latency on the dashboard exceeding 800ms p95.
+- 30-day Convex bill exceeds the budget envelope.
+- Dashboard p95 query latency goes above 800ms.
+- A new pattern matcher needs an analytic shape that materialization can't serve.

@@ -1,5 +1,4 @@
-//! Bridge configuration. Loaded from environment at startup; no runtime reload.
-//! Keeping config simple is the point — every dial is wired to a single env var.
+// Loaded once at startup. Every dial is one env var.
 
 use anyhow::{Context, Result};
 
@@ -28,5 +27,5 @@ pub fn load() -> Result<Config> {
 }
 
 fn env_required(name: &str) -> Result<String> {
-    std::env::var(name).with_context(|| format!("missing required env var {name}"))
+    std::env::var(name).with_context(|| format!("missing env var {name}"))
 }

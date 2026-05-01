@@ -4,20 +4,11 @@ import { v } from 'convex/values';
 import { ALL_MATCHERS, type TxEvent, type MatcherContext } from '@sui-mev-lab/pattern-matchers';
 import { loadMatcherContext } from '../internal/matcherContext';
 
-/**
- * Driver for pattern detection.
- *
- * Runs on a scheduled cadence (every 30s) over a rolling window of recent
- * checkpoints. Loads the window, calls every matcher, persists candidate
- * findings, and enqueues replays.
- *
- * Matchers themselves are pure functions in the @sui-mev-lab/pattern-matchers
- * package. This action is the only place that knows about Convex storage.
- *
- * See ADR 0004 for why detection logic does not live in Convex.
- */
+// Runs every 30s. Loads the rolling window, calls each matcher, persists any
+// candidates the matchers produce. Matcher logic itself is in the
+// pattern-matchers package and has no Convex dependency. ADR 0004.
 
-const WINDOW_CHECKPOINTS = 60; // ~5 minutes at typical Sui cadence
+const WINDOW_CHECKPOINTS = 60; // ~5 minutes at typical Sui cadence.
 
 export const runMatchers = internalAction({
   args: {},
@@ -29,7 +20,6 @@ export const runMatchers = internalAction({
     const window = await ctx.runQuery(internal.internal.txEvents.windowSince, {
       minCheckpoint,
     });
-
     if (window.length === 0) return { reason: 'empty-window', minCheckpoint };
 
     const matcherContext: MatcherContext = await loadMatcherContext(ctx);
@@ -61,12 +51,8 @@ export const runMatchers = internalAction({
   },
 });
 
-/**
- * Idempotent persistence for candidate findings.
- *
- * We dedupe on (pattern, relatedTxDigests sorted). Re-running a matcher over
- * an overlapping window does not create duplicate findings.
- */
+// Idempotent. Dedup on (pattern, sorted related digests). Overlapping windows
+// will rediscover the same candidates; that's fine, they get dropped here.
 export const persistCandidates = internalMutation({
   args: {
     matcher: v.string(),

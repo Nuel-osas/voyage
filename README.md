@@ -1,110 +1,46 @@
-# Sui MEV Discovery Lab
+# voyage
 
-**A research-grade scanner for extractable value patterns on Sui mainnet.**
+A scanner for MEV on Sui mainnet.
 
-Sui claims its parallel-execution architecture eliminates traditional MEV. This project rigorously tests that claim.
+Sui claims its parallel-execution architecture eliminates traditional MEV. As far as I can tell, nobody has tested that publicly with any rigor. This is an attempt.
 
-The lab ingests Sui mainnet shared-object access patterns into a reactive backend, runs pattern detection against known MEV signatures from EVM/Solana, replays candidates against forked Sui state to confirm extractable value, and surfaces findings through a coordinated-disclosure pipeline.
+The lab ingests filtered mainnet checkpoints into Convex, runs pattern matchers against the ingested transactions, replays candidates against forked Sui state to confirm extracted value, and surfaces verified findings through a reviewer dashboard with a coordinated-disclosure path.
 
-Both outcomes are valuable: a CVE-class finding, or a formal benchmark of Sui's MEV-resistance claim.
+If something is found, it's a paper, a bounty, and a tool. If nothing is found, it's the first formal benchmark of the claim.
 
----
-
-## Architecture at a Glance
+## Layout
 
 ```
-                ┌──────────────────────────────────────────────┐
-                │              Sui mainnet RPC + Indexer        │
-                └───────────────────────┬──────────────────────┘
-                                        │ checkpoint subscription
-                                        ▼
-                        ┌──────────────────────────┐
-                        │   ingest-bridge (Rust)    │
-                        │  filters shared-obj only  │  
-                        └───────────┬──────────────┘
-                                    │ batched HTTP push
-                                    ▼
-        ┌────────────────────────────────────────────────────────┐
-        │                    Convex Backend                       │
-        │  ┌───────────────┐  ┌──────────────┐  ┌────────────┐  │
-        │  │ tx graph + obj │  │  embeddings  │  │  findings  │  │
-        │  │   timeline DB  │  │ (vector idx) │  │   review   │  │
-        │  └───────────────┘  └──────────────┘  └────────────┘  │
-        │  ┌─────────────────────────────────────────────────┐  │
-        │  │  scheduled actions: pattern matchers + replays  │  │
-        │  └─────────────────────────────────────────────────┘  │
-        └────────────────────────┬───────────────────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-   ┌──────────────────┐  ┌────────────────┐  ┌──────────────┐
-   │ replay-engine    │  │ pattern-       │  │  dashboard   │
-   │ (Rust, forked    │  │ matchers (TS)  │  │  (Next.js)   │
-   │ state replay)    │  │                │  │  reactive UI │
-   └──────────────────┘  └────────────────┘  └──────────────┘
+voyage/
+  packages/
+    convex/             reactive backend, schema, scheduled detection, http ingest
+    ingest-bridge/      rust worker: sui rpc -> filter -> convex http
+    pattern-matchers/   pure-function detectors, no convex dependency
+    replay-engine/      rust binary, reruns candidates against forked state
+    dashboard/          next.js review surface
+  docs/
+    adr/                architecture decision records
+    data-model.md       why the schema looks the way it does
+    mev-patterns.md     hypotheses + detection criteria
+    milestones.md       6-week plan
 ```
 
-This split is deliberate. Read [`ARCHITECTURE.md`](./ARCHITECTURE.md) and the ADRs in [`docs/adr/`](./docs/adr/) for the reasoning.
+## Why this stack
 
----
+The architecture is shaped by a single constraint: one engineer, six weeks, then maintenance. That ruled out anything where I'd spend two weeks on plumbing.
 
-## Repository Layout
+Convex sits at the center because it collapses what would otherwise be Postgres + Redis + a vector index + cron + a websocket layer into one service with one type system. The reactive query model is the right shape for a tool with multiple consumers (dashboard, scheduled rematching, replay completion, reviewer notifications). I'm not trying to make Convex do everything though, see ADR 0001.
 
-This is a pnpm workspaces monorepo. Each package has a single responsibility and a stable boundary.
+Throughput-bound work sits at the Rust edges. Sui peaks around 7K TPS and our filter walks effect dependency graphs. That's not work I want to do in a TypeScript Convex function. The ingest-bridge lives in front of Convex, not inside it.
 
-```
-sui-mev-lab/
-├── docs/
-│   ├── adr/                    # Architecture Decision Records (numbered, dated, immutable once accepted)
-│   ├── data-model.md           # Convex schema rationale
-│   └── mev-patterns.md         # Catalog of MEV patterns the lab hunts
-├── packages/
-│   ├── convex/                 # Convex backend — single source of truth for shared state
-│   ├── ingest-bridge/          # Rust worker: Sui RPC → filtered events → Convex HTTP endpoints
-│   ├── replay-engine/          # Rust: deterministic forked-state replay for candidate verification
-│   ├── pattern-matchers/       # TypeScript pattern detection logic (shared between Convex actions + offline backfill)
-│   └── dashboard/              # Next.js reactive UI for findings review and disclosure workflow
-├── scripts/                    # Operational tooling (bootstrap, replay-batch, dry-run)
-├── ARCHITECTURE.md             # Top-level design doc
-└── README.md                   # This file
-```
+Replay verification sits in another Rust worker because correctness here means linking against the canonical Move VM, not an approximation of it. A 30-second replay is also the wrong shape for a Convex action.
 
----
-
-## Why This Stack
-
-The architecture is opinionated about where each technology sits. The constraint that drove every decision: **a single engineer must be able to ship the full system in 6 weeks, then maintain it indefinitely.**
-
-### Convex — the reactive coordination layer
-Convex owns the system of record for the transaction graph, embeddings, findings, and review state. It collapses what would otherwise be Postgres + Redis + a vector index + a cron worker + a WebSocket server into one type-safe surface. Every part of the system that needs reactive updates (dashboard, reviewer notifications, scheduled rescans) reads from Convex.
-
-### Rust — the high-throughput edges
-Convex is not a streaming ingest engine, and that is correct. The `ingest-bridge` is a Rust worker that subscribes to Sui checkpoints, applies aggressive filtering (shared-object mutations only), and pushes batched payloads to Convex over HTTP. This keeps Convex out of the hot path for raw mainnet throughput while preserving its role as the authoritative store. The `replay-engine` is also Rust because deterministic forked-state replay against the real Sui execution layer requires the canonical Move VM bindings.
-
-### Next.js — the review surface
-The dashboard does not own state. It subscribes to Convex queries and renders. Reviewers triage candidate findings, mark severity, and drive the disclosure workflow. Server-side rendering only for SEO on the public methodology pages — everything operational is client-side reactive.
-
----
-
-## Where Convex's Boundaries Become Architecture
-
-Convex is the right hub for this system, but it has shape, and that shape drove specific decisions:
-
-- **Sui produces ~7K TPS at peak.** Pushing every transaction into Convex would exceed reasonable cost envelopes and write rates. The `ingest-bridge` filters at source — only shared-object mutations and DEX-touching transactions cross the boundary. This typically reduces volume by 60-90%.
-- **Forked-state replay can take 30+ seconds per candidate.** Convex actions support long-running work but cost-per-second is real. We push replays to a Rust worker pool; Convex schedules and observes, but does not execute.
-- **Convex query language is not SQL.** Cross-table analytics over historical data is an awkward fit. We materialize daily roll-ups into purpose-built tables for the kinds of queries the reviewer UI needs, rather than trying to express ad-hoc analytics at query time.
-- **Vector search has size and dimensionality limits.** Embeddings are kept compact (192-dim, transaction-shape only — not full blob embeddings). Larger experiments (full PTB embeddings) are explored offline.
-
-These are not workarounds. They are the architecture: Convex owns coordination, Rust owns throughput, and the boundary is where each is strongest.
-
----
+Pattern matchers are pure functions. They don't import Convex. The action that drives them is a thin shell. This means I can unit-test a matcher in milliseconds and run the same matcher offline against historical data without changes.
 
 ## Status
 
-This repository is scaffolded and architecturally documented. Implementation milestones are tracked in `docs/milestones.md`. The first runnable end-to-end slice (live ingest → one pattern matcher → one replay-confirmed finding) is the target for the end of week 1.
-
----
+Scaffolding is in. First end-to-end slice (real checkpoint -> matcher -> verified finding in dashboard) is the week-1 target.
 
 ## License
 
-To be determined. Likely Apache-2.0 for the lab itself; findings released under coordinated disclosure norms.
+Apache-2.0 once code starts running. Findings released under coordinated disclosure.

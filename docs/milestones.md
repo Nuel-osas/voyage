@@ -1,68 +1,41 @@
 # Milestones
 
-A 6-week plan. Each milestone produces a runnable artifact, not a paper plan.
+Six weeks. Each milestone produces something runnable, not paper plans.
 
-## Week 1 — End-to-end thin slice
+## Week 1: thin slice
 
-**Goal:** one transaction flows from Sui mainnet into Convex, through one matcher, into a finding row, into the dashboard.
+One transaction flows from Sui mainnet into Convex, through one matcher, into a finding row, into the dashboard.
 
-- ingest-bridge: Sui checkpoint subscription, naive filter, HTTP push.
-- Convex: `tx_event` insert, `recordCheckpoint` mutation, watermark advancement.
-- pattern-matchers: `sharedObjectSandwich` runs against a static fixture in tests.
-- Convex action: invokes matcher over rolling window, persists candidates, enqueues replays.
-- dashboard: single page listing findings, subscribes to Convex, no styling.
+Bridge subscribes to checkpoints and posts filtered batches. Convex `recordCheckpoint` writes rows and advances the watermark. `sharedObjectSandwich` runs against a static fixture in tests and against live windows in the action. Dashboard lists findings, no styling yet.
 
-Acceptance: live mainnet checkpoint produces a candidate (real or synthetic) visible in the dashboard within 60 seconds.
+Done when a live mainnet checkpoint produces a candidate (real or synthetic) visible in the dashboard within 60 seconds.
 
-## Week 2 — Replay verification
+## Week 2: replay verification
 
-**Goal:** the replay-engine confirms or rejects candidates against forked state.
+Replay-engine confirms or rejects candidates. Loads state at the slot before, replays canonical and adversarial orders, computes extracted value. Convex enqueues, replay claims, writes result back. Finding state machine works end-to-end.
 
-- replay-engine: Rust binary that loads Sui state at slot, replays transactions in canonical and adversarial orders, returns extracted value estimate.
-- Convex: replay-engine subscribes to `replay_queue`, claims jobs atomically, writes results.
-- finding state machine works end to end: unverified → replaying → verified/rejected.
-- dashboard: shows replay status and confirmed extraction values.
+Done when a verified finding appears in the dashboard with a non-zero confirmed extraction backed by a replay diff a reviewer can inspect.
 
-Acceptance: a verified finding appears in the dashboard with a non-zero confirmed extraction value, supported by a replay diff that a reviewer can inspect.
+## Week 3: pattern coverage and embeddings
 
-## Week 3 — Pattern coverage and embeddings
+`oracleFrontrun` ships. `atomicCrossDexArbitrage` ships. Embedding encoder writes 192-dim shape vectors. Dashboard gets a "similar transactions" panel.
 
-**Goal:** all v1 matchers shipped; embeddings power similarity search.
+Done when opening a finding shows the 10 most similar historical transactions with confidence scores.
 
-- `oracleFrontrun` ships.
-- `atomicCrossDexArbitrage` ships.
-- Embedding encoder: 192-dim transaction-shape vectors stored in `tx_embeddings`.
-- Convex query: "find transactions similar to this one" backed by vector index.
-- dashboard: per-finding similar-transactions panel.
+## Week 4: backfill
 
-Acceptance: opening a finding shows the 10 most similar historical transactions, with confidence scores.
+Bridge gains a backfill mode, idempotent against `tx_event.digest`. Run a 30-day backfill over historical mainnet. Schedule a full-window rematch.
 
-## Week 4 — Backfill and rolling analysis
+Done when we have a stable count of findings across 30 days with a documented baseline.
 
-**Goal:** ingest 30 days of historical mainnet data; first systematic scan completes.
+## Week 5: disclosure pipeline
 
-- ingest-bridge: backfill mode, idempotent against `tx_event.digest`.
-- Convex: scheduled rematching of the full 30-day window with current matcher set.
-- dashboard: histogram of findings by pattern, by day, by extraction range.
+Disclosure state transitions, reviewer assignments, draft templates, recipient management. Notification path to the Sui Foundation defined and tested with a synthetic finding.
 
-Acceptance: a stable count of findings across 30 days, with a documented statistical baseline.
+Done when a real or synthetic finding moves through `private -> drafted -> sent` with a complete audit trail.
 
-## Week 5 — Disclosure pipeline and curation
+## Week 6: public artifact
 
-**Goal:** verified findings flow into a coordinated disclosure workflow.
+Methodology page on the dashboard. Open-source release of pattern-matchers under Apache-2.0. Paper draft regardless of outcome.
 
-- Convex: `finding.disclosureState` transitions, reviewer assignments, drafted disclosures stored.
-- dashboard: per-finding disclosure UI, draft template, recipient management.
-- Notification path to Sui Foundation defined and tested with a synthetic finding.
-
-Acceptance: a real (or synthetic) finding moves through `private → drafted → sent` with a complete audit trail.
-
-## Week 6 — Public artifact
-
-**Goal:** the lab's first public output ships.
-
-- Methodology page on the dashboard explaining what the lab does and what it does not claim.
-- Open-source release of pattern-matchers and the methodology document under Apache-2.0.
-- Paper draft (regardless of outcome): findings, methodology, replay corpus, null-result analysis where applicable.
-
-Acceptance: external researcher could clone the repo and reproduce the rolling 30-day scan against their own Convex deployment.
+Done when an outside researcher could clone the repo and reproduce the rolling 30-day scan against their own Convex deployment.

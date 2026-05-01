@@ -1,13 +1,7 @@
-//! Sui mainnet checkpoint subscriber.
-//!
-//! Pulls checkpoints from a JSON-RPC full node, filters them, and hands
-//! filtered checkpoints to the pusher. The hot path is single-threaded by
-//! design — Sui's checkpoint cadence is well within what one async task
-//! can handle, and serializing prevents out-of-order Convex writes.
-//!
-//! Backfill (replaying historical checkpoints) is a separate mode controlled
-//! by `START_CHECKPOINT`. In backfill mode the subscriber walks forward from
-//! the start checkpoint to the current head, then transitions to live mode.
+// Single async task pulls checkpoints, filters, hands off to the pusher.
+// Sui's cadence is well within what one task can handle and serializing
+// keeps writes in order downstream. Backfill (replay older checkpoints)
+// is the same loop with a different starting point.
 
 use crate::config::Config;
 use crate::filter::Filter;
@@ -66,22 +60,17 @@ pub async fn run(cfg: Config) -> Result<()> {
     let _filter = build_filter().await?;
     let _pusher = Pusher::new(cfg.clone());
 
-    // Wiring placeholder. The actual implementation will:
-    //   1. Resolve the starting checkpoint (from cfg or by querying Convex watermark).
-    //   2. Walk checkpoints in order.
-    //   3. For each checkpoint: pull transactions, run Filter, build FilteredCheckpoint, push.
-    //   4. On live tail, switch to a checkpoint subscription stream.
-    //
-    // Implemented in week 1. Schema and contracts above are the stable
-    // surface against which the rest of the system is being built.
-    tracing::info!("ingest-bridge wiring placeholder; implementation lands in week 1");
+    // Wiring placeholder. Lands week 1:
+    //   - resolve start checkpoint from cfg or watermark
+    //   - walk checkpoints in order, pull, filter, push
+    //   - on tail, switch to subscription
+    tracing::info!("subscriber wiring placeholder");
     Ok(())
 }
 
 async fn build_filter() -> Result<Filter> {
-    // The DEX and oracle registries are loaded from a versioned JSON file checked
-    // into the repo at packages/ingest-bridge/registry/. Updates are tracked in git,
-    // not in a database, so reviewers can audit which protocols the lab is watching.
+    // DEX/oracle registries are versioned JSON in packages/ingest-bridge/registry/.
+    // Updates land via PR so reviewers can audit which protocols we're watching.
     Ok(Filter {
         dex_pool_ids: Default::default(),
         oracle_ids: Default::default(),

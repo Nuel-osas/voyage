@@ -1,40 +1,24 @@
-# ADR 0002: Filter Shared-Object Mutations at the Ingest Boundary
+# ADR 0002: Filter at the bridge, not in Convex
 
-**Status:** Accepted
-**Decision drivers:** cost, signal-to-noise ratio, MEV theory
+Sui's parallel execution rests on a specific property: transactions touching only owned objects bypass consensus. Only shared-object access is sequenced.
 
-## Context
+If MEV exists on Sui, it almost certainly involves shared-object access. So a transaction that touches no shared objects is almost certainly noise for our purposes.
 
-Sui's parallel-execution claim rests on a specific architectural property: transactions that touch only owned objects can execute in parallel without coordination. Only transactions that touch shared objects are sequenced through consensus and could plausibly host MEV.
-
-This is both a theoretical observation and an operational one: if MEV exists on Sui, it almost certainly involves shared-object access. Ingesting transactions that touch only owned objects is therefore expensive noise.
-
-## Decision
-
-The `ingest-bridge` filters at source. A transaction is forwarded to Convex if and only if at least one of:
+The bridge keeps a transaction if any of these are true:
 
 - It mutates a shared object.
 - It touches a known DEX pool object (curated allow-list).
 - It touches a known oracle object (curated allow-list).
-- It is one of multiple transactions in the same checkpoint with overlapping touched-object sets and distinct senders (sandwich-shape signature).
+- It overlaps in touched objects with another transaction in the same checkpoint by a different sender (sandwich-shape pre-filter).
 
-All other transactions are dropped at the boundary and never reach Convex.
+Everything else is dropped before Convex sees it. In practice this kills 60-90% of mainnet volume.
 
-## Consequences
+## What this costs us
 
-### Positive
+Selection bias. Any MEV pattern that doesn't involve shared objects is invisible to this lab. That's a real limitation. If we publish a null result, it applies only to shared-object-mediated MEV. We say so.
 
-- Volume reduction in the 60-90% range during typical mainnet activity. Cost-bounded.
-- Stored data is by definition relevant to MEV detection. Signal-to-noise is high.
-- Pattern matchers work on smaller windows and finish faster.
+The DEX/oracle allow-lists need maintenance as protocols launch. A weekly audit and a 1% sample of dropped transactions into a "control" bucket is the safety net for the obvious failure mode (a new protocol uses an unfamiliar pool object pattern).
 
-### Negative
+## Why not in Convex
 
-- **Selection bias.** Any MEV pattern that does not involve shared objects is invisible to us. This is a known and accepted limitation. The lab's null result, if produced, applies only to shared-object-mediated MEV.
-- The DEX/oracle allow-lists must be maintained as protocols launch. A new DEX that uses a non-standard pool object pattern could be missed.
-
-### Mitigations
-
-- Document the selection criterion prominently in any published findings or null result.
-- Audit the allow-list weekly; subscribe to Sui ecosystem releases to catch new protocols.
-- Sample 1% of dropped transactions into a parallel "control" bucket to spot-check that no surprising MEV shape is being filtered out.
+Filtering 7K TPS in TypeScript Convex functions burns function time on cheap rejections. The bridge is doing it in Rust against the canonical Sui types anyway. The right boundary.

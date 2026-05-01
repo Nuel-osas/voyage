@@ -1,21 +1,6 @@
-# ADR 0004: Pattern Matchers as Pure Functions
+# ADR 0004: Pattern matchers are pure functions
 
-**Status:** Accepted
-**Decision drivers:** testability, portability, correctness
-
-## Context
-
-Pattern matchers are the heart of the lab's intellectual property. Each matcher encodes a hypothesis about a class of MEV — sandwich, JIT, oracle frontrun, atomic arbitrage. They must be:
-
-- **Testable in isolation** without spinning up Convex or Sui.
-- **Reusable** across the live online path (Convex scheduled actions over rolling windows) and the offline backfill path (a Node.js script over a full historical export).
-- **Inspectable** — researchers must be able to read a matcher and understand exactly what it claims.
-
-A matcher tightly coupled to Convex's API would fail all three.
-
-## Decision
-
-Every pattern matcher is a pure function with the signature:
+Every matcher has the signature:
 
 ```ts
 type PatternMatcher = (
@@ -24,31 +9,14 @@ type PatternMatcher = (
 ) => CandidateFinding[];
 ```
 
-Where:
+No Convex imports. No network calls. No side effects.
 
-- `window` is a chronologically ordered batch of transaction events.
-- `context` is read-only metadata (current Sui protocol version, known pool registry, etc.).
-- The return is a possibly-empty list of candidates.
+This is the most important boundary in the codebase, because pattern logic is the actual research. Tying it to Convex would mean:
 
-Matchers have no side effects, make no network calls, and have no awareness of Convex.
+- I can't unit-test a matcher without spinning up a Convex deployment.
+- I can't run the same code offline against a historical export.
+- A new researcher contributing a matcher would need to learn Convex first.
 
-The Convex action that drives matchers is responsible for: loading the window, calling each matcher, persisting candidates, and enqueuing replays. That separation is strict.
+So the rule is hard: matchers are dependency-free. The Convex action that drives them is responsible for loading the window, building the context, calling each matcher, and persisting candidates. That driver is small and well-tested.
 
-## Consequences
-
-### Positive
-
-- Each matcher has a unit test suite that runs in milliseconds.
-- The same matcher code runs in Convex live and in offline batch backfill, guaranteeing parity.
-- A new researcher can add a matcher by writing one TypeScript file and one test file. No Convex knowledge required.
-- Pattern-detection logic is portable. If we ever move off Convex, matchers don't change.
-
-### Negative
-
-- Matchers cannot read additional context lazily. If a matcher needs the historical price of an oracle 100 blocks ago, that data must be passed in via `context` rather than fetched on demand.
-- The action driver code has more responsibility — assembling the right context, persisting results.
-
-### Mitigations
-
-- The `context` object is intentionally generous. We pass the full pool registry, oracle registry, and recent price history snapshots, even if a given matcher uses only a subset.
-- The driver action is small and well-tested. Its only job is plumbing.
+The cost is that matchers can't lazily fetch context. If a matcher needs the price of an oracle 100 blocks ago, the driver has to pass it in. The `MatcherContext` is intentionally generous - we pass the full pool registry, oracle registry, and recent oracle snapshots whether or not a given matcher uses them. A few hundred bytes of unused context per call is cheap; a matcher that secretly hits the network is not.

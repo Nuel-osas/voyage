@@ -1,8 +1,5 @@
-//! Push filtered checkpoints to the Convex HTTP ingest endpoint.
-//!
-//! Idempotency: every payload is keyed by `(checkpoint, ingest_version)`.
-//! Convex's `recordCheckpoint` mutation enforces deduplication on `digest`
-//! and skips already-recorded transactions. Re-pushing is therefore safe.
+// Idempotency on the Convex side keys on (digest, ingest_version), so retries
+// here are safe.
 
 use crate::config::Config;
 use crate::sui_subscriber::FilteredCheckpoint;
@@ -16,10 +13,7 @@ pub struct Pusher {
 
 impl Pusher {
     pub fn new(cfg: Config) -> Self {
-        Self {
-            client: Client::new(),
-            cfg,
-        }
+        Self { client: Client::new(), cfg }
     }
 
     pub async fn push(&self, ckpt: &FilteredCheckpoint) -> Result<()> {
@@ -36,12 +30,12 @@ impl Pusher {
             .json(&body)
             .send()
             .await
-            .context("ingest push failed")?;
+            .context("push failed")?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("ingest endpoint rejected payload: {status} {text}");
+            anyhow::bail!("ingest rejected: {status} {text}");
         }
         Ok(())
     }
